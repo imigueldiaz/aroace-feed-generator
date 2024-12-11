@@ -83,18 +83,22 @@ const run = async () => {
     avatarRef = blobRes.data.blob
   }
 
-  await agent.api.com.atproto.repo.putRecord({
-    repo: agent.session?.did ?? '',
-    collection: ids.AppBskyFeedGenerator,
-    rkey: recordName,
-    record: {
-      did: feedGenDid,
-      displayName: displayName,
-      description: description,
-      avatar: avatarRef,
-      createdAt: new Date().toISOString(),
-    },
-  })
+  try {
+    await agent.api.com.atproto.repo.putRecord({
+      repo: agent.session?.did ?? '',
+      collection: ids.AppBskyFeedGenerator,
+      rkey: recordName,
+      record: {
+        did: feedGenDid,
+        displayName: displayName,
+        description: description,
+        avatar: avatarRef,
+        createdAt: new Date().toISOString(),
+      },
+    })
+  } catch (error) {
+    console.error(error)
+  }
 
   console.log('All done 🎉')
 }
