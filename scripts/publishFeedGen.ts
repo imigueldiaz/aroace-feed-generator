@@ -57,14 +57,14 @@ const run = async () => {
       },
     ])
 
-  const { handle, password, recordName, displayName, description, avatar, service } = answers
+  const { handle, recordName, displayName, description, avatar, service } = answers
 
   const feedGenDid =
     process.env.FEEDGEN_SERVICE_DID ?? `did:web:${process.env.FEEDGEN_HOSTNAME}`
 
   // only update this if in a test environment
   const agent = new AtpAgent({ service: service ? service : 'https://bsky.social' })
-  await agent.login({ identifier: handle, password})
+  await agent.login({ identifier: handle, password: process.env.FEEDGEN_PASSWORD ?? answers.password })
 
   let avatarRef: BlobRef | undefined
   if (avatar) {
