@@ -8,7 +8,7 @@ import describeGenerator from './methods/describe-generator'
 import { createDb, Database, migrateToLatest } from './db'
 import { FirehoseSubscription } from './subscription'
 import { AppContext, Config } from './config'
-import wellKnown from './well-known'
+import { makeRouter } from './well-known'
 
 export class FeedGenerator {
   public app: FastifyInstance
@@ -89,13 +89,11 @@ export class FeedGenerator {
 
     // Registrar well-known como plugin
     app.register(async (fastify) => {
-      const wellKnownHandler = wellKnown(ctx)
+      const wellKnownRoutes = makeRouter(ctx)
       fastify.route({
         url: '/.well-known/did.json',
         method: ['GET'],
-        handler: (request, reply) => {
-          wellKnownHandler(request.raw, reply.raw)
-        }
+        handler: wellKnownRoutes.didJson
       })
     })
 
