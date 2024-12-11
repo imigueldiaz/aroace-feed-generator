@@ -4,7 +4,7 @@ import { AppContext } from './config'
 const makeRouter = (ctx: AppContext) => {
   const router = express.Router()
 
-  router.get('/.well-known/did.json', (_req, res) => {
+  router.get('/.well-known/did.json', (_req: any, res: { sendStatus: (arg0: number) => any; json: (arg0: { '@context': string[]; id: string; service: { id: string; type: string; serviceEndpoint: string }[] }) => void }) => {
     if (!ctx.cfg.serviceDid.endsWith(ctx.cfg.hostname)) {
       return res.sendStatus(404)
     }

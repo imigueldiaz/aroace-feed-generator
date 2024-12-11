@@ -1,6 +1,6 @@
-import http from 'http'
-import events from 'events'
-import express from 'express'
+import { FastifyInstance, FastifyServerOptions } from 'fastify'
+import fastify from 'fastify'
+import cors from '@fastify/cors'
 import { DidResolver, MemoryCache } from '@atproto/identity'
 import { createServer } from './lexicon'
 import feedGeneration from './methods/feed-generation'
@@ -11,14 +11,13 @@ import { AppContext, Config } from './config'
 import wellKnown from './well-known'
 
 export class FeedGenerator {
-  public app: express.Application
-  public server?: http.Server
+  public app: FastifyInstance
   public db: Database
   public firehose: FirehoseSubscription
   public cfg: Config
 
   constructor(
-    app: express.Application,
+    app: FastifyInstance,
     db: Database,
     firehose: FirehoseSubscription,
     cfg: Config,
@@ -30,7 +29,25 @@ export class FeedGenerator {
   }
 
   static create(cfg: Config) {
-    const app = express()
+    const fastifyOpts: FastifyServerOptions = {
+      logger: true,
+      maxParamLength: 100,
+      connectionTimeout: 30000,  // 30 segundos
+      keepAliveTimeout: 30000,
+      pluginTimeout: 10000,
+    }
+    
+    const app = fastify(fastifyOpts)
+    
+    // Configurar CORS
+    app.register(cors, {
+      origin: true, // Permite todas los orígenes en desarrollo
+      methods: ['GET', 'POST'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true,
+      maxAge: 7200, // 2 horas de cache para las opciones preflight
+    })
+
     const db = createDb(cfg.sqliteLocation)
     const firehose = new FirehoseSubscription(db, cfg.subscriptionEndpoint)
 
@@ -48,25 +65,57 @@ export class FeedGenerator {
         blobLimit: 5 * 1024 * 1024, // 5mb
       },
     })
+
     const ctx: AppContext = {
       db,
       didResolver,
       cfg,
     }
+
+    // Register routes
     feedGeneration(server, ctx)
     describeGenerator(server, ctx)
-    app.use(server.xrpc.router)
-    app.use(wellKnown(ctx))
+    
+    // Registrar el router XRPC como plugin de Fastify
+    app.register(async (fastify) => {
+      fastify.route({
+        url: '/xrpc/*',
+        method: ['GET', 'POST'],
+        handler: (request, reply) => {
+          server.xrpc.router(request.raw, reply.raw)
+        }
+      })
+    })
+
+    // Registrar well-known como plugin
+    app.register(async (fastify) => {
+      const wellKnownHandler = wellKnown(ctx)
+      fastify.route({
+        url: '/.well-known/did.json',
+        method: ['GET'],
+        handler: (request, reply) => {
+          wellKnownHandler(request.raw, reply.raw)
+        }
+      })
+    })
 
     return new FeedGenerator(app, db, firehose, cfg)
   }
 
-  async start(): Promise<http.Server> {
+  async start(): Promise<void> {
     await migrateToLatest(this.db)
     this.firehose.run(this.cfg.subscriptionReconnectDelay)
-    this.server = this.app.listen(this.cfg.port, this.cfg.listenhost)
-    await events.once(this.server, 'listening')
-    return this.server
+    
+    try {
+      const address = await this.app.listen({
+        port: this.cfg.port,
+        host: this.cfg.listenhost
+      })
+      console.log(`Server listening at ${address}`)
+    } catch (err) {
+      this.app.log.error(err)
+      process.exit(1)
+    }
   }
 }
 
