@@ -13,7 +13,7 @@ export function makeRouter(ctx: AppContext) {
         id: ctx.cfg.serviceDid,
         service: [
           {
-            id: '#bsky_fg',
+            id: '#aspec-community-feed',
             type: 'BskyFeedGenerator',
             serviceEndpoint: `https://${ctx.cfg.hostname}`,
           },
