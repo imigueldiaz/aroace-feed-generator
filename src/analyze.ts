@@ -1,5 +1,8 @@
 import { Record } from './lexicon/types/app/bsky/feed/post'
-import { franc } from 'franc'
+// Cambiar la importación de franc
+import * as francAll from 'franc'
+const franc = francAll.franc
+
 import { analyzeContent, SupportedLanguage, keywords } from './filters'
 import dotenv from 'dotenv'
 
