@@ -84,7 +84,7 @@ const run = async () => {
   }
 
   try {
-    const record = await agent.api.com.atproto.repo.putRecord({
+    const record = await agent.com.atproto.repo.putRecord({
       repo: agent.session?.did ?? '',
       collection: ids.AppBskyFeedGenerator,
       rkey: recordName,

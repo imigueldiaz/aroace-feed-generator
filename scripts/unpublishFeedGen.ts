@@ -1,5 +1,5 @@
 import dotenv from 'dotenv'
-import { AtpAgent } from '@atproto/api'
+import { AtpAgent  }   from '@atproto/api'
 import { ids } from '../src/lexicon/lexicons'
 import inquirer from 'inquirer'
 
@@ -51,7 +51,7 @@ const run = async () => {
   const agent = new AtpAgent({ service: service ? service : 'https://bsky.social' })
   await agent.login({ identifier: handle, password })
 
-  await agent.api.com.atproto.repo.deleteRecord({
+  await agent.com.atproto.repo.deleteRecord({
     repo: agent.session?.did ?? '',
     collection: ids.AppBskyFeedGenerator,
     rkey: recordName,
