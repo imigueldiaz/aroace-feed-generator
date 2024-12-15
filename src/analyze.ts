@@ -72,6 +72,24 @@ export function analyzePost(record: Record): boolean {
     return false;
   }
 
+  // Check if the post is spam
+  if (analysis.hasSpam) {
+    if (process.env.DEBUG === 'true') {
+      logger.debug('❌ Post detected as spam');
+    }
+    return false;
+  }
+
+  // Check if it's just a list of hashtags
+  const hashtagCount = (record.text.match(/#/g) || []).length;
+  const wordCount = record.text.split(/\s+/).length;
+  if (hashtagCount > wordCount * 0.5) {
+    if (process.env.DEBUG === 'true') {
+      logger.debug('❌ Post contains too many hashtags');
+    }
+    return false;
+  }
+
   const postText = record.text.toLowerCase();
 
   // Check specific terms in primary and fallback languages
