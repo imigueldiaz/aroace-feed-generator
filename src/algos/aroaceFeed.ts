@@ -4,7 +4,7 @@ import { logger } from '../logger'
 import { SkeletonFeedPost } from '../lexicon/types/app/bsky/feed/defs'
 
 // max 15 chars
-export const shortname = 'aroace-feed'
+export const shortname = 'letras-olvidadas'
 
 export const handler = async (ctx: AppContext, params: QueryParams) => {
   let builder = ctx.db
