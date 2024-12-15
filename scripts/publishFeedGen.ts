@@ -20,7 +20,7 @@ const run = async () => {
         required: true,
       },
       {
-        type: 'password',
+        type: 'input',
         name: 'password',
         message: 'Enter your Bluesky password (preferably an App Password):',
       },
@@ -84,7 +84,7 @@ const run = async () => {
   }
 
   try {
-    await agent.api.com.atproto.repo.putRecord({
+    const record = await agent.api.com.atproto.repo.putRecord({
       repo: agent.session?.did ?? '',
       collection: ids.AppBskyFeedGenerator,
       rkey: recordName,
@@ -96,6 +96,9 @@ const run = async () => {
         createdAt: new Date().toISOString(),
       },
     })
+
+    console.log(`Feed generator created as ${record}`)
+
   } catch (error) {
     console.error(error)
   }

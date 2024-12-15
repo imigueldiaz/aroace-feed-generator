@@ -12,9 +12,11 @@ import {
   isCommit,
 } from '../lexicon/types/com/atproto/sync/subscribeRepos'
 import { Database } from '../db'
+import { logger } from '../logger'
 
 export abstract class FirehoseSubscriptionBase {
   public sub: Subscription<RepoEvent>
+  private subscribed: boolean = false
 
   constructor(public db: Database, public service: string) {
     this.sub = new Subscription({
@@ -28,7 +30,7 @@ export abstract class FirehoseSubscriptionBase {
             value,
           )
         } catch (err) {
-          console.error('repo subscription skipped invalid message', err)
+          logger.error('repo subscription skipped invalid message', err)
         }
       },
     })
@@ -36,90 +38,96 @@ export abstract class FirehoseSubscriptionBase {
 
   abstract handleEvent(evt: RepoEvent): Promise<void>
 
-  async run(subscriptionReconnectDelay: number) {
+  async run(subscriptionReconnectDelay: number): Promise<void> {
     try {
+      logger.info('🚀 Starting firehose subscription...')
       for await (const evt of this.sub) {
-        this.handleEvent(evt).catch((err) => {
-          console.error('repo subscription could not handle message', err)
-        })
+        if (!this.subscribed) {
+          logger.info('🔥 Firehose subscription established')
+          this.subscribed = true
+        }
+        
+        try {
+          await this.handleEvent(evt)
+        } catch (err) {
+          logger.error('❌ Error handling firehose message:', err)
+        }
+
         // update stored cursor every 20 events or so
         if (isCommit(evt) && evt.seq % 20 === 0) {
           await this.updateCursor(evt.seq)
         }
       }
     } catch (err) {
-      console.error('repo subscription errored', err)
-      setTimeout(
-        () => this.run(subscriptionReconnectDelay),
-        subscriptionReconnectDelay,
-      )
+      logger.error('❌ Firehose subscription error:', err)
+      this.subscribed = false
+      logger.info(`🔄 Reconnecting in ${subscriptionReconnectDelay}ms...`)
+      setTimeout(() => this.run(subscriptionReconnectDelay), subscriptionReconnectDelay)
     }
-  }
-
-  async updateCursor(cursor: number) {
-    await this.db
-      .updateTable('sub_state')
-      .set({ cursor })
-      .where('service', '=', this.service)
-      .execute()
   }
 
   async getCursor(): Promise<{ cursor?: number }> {
-    const res = await this.db
+    const cursor = await this.db
       .selectFrom('sub_state')
-      .selectAll()
+      .select('cursor')
       .where('service', '=', this.service)
       .executeTakeFirst()
-    return res ? { cursor: res.cursor } : {}
-  }
-}
-
-export const getOpsByType = async (evt: Commit): Promise<OperationsByType> => {
-  const car = await readCar(evt.blocks)
-  const opsByType: OperationsByType = {
-    posts: { creates: [], deletes: [] },
-    reposts: { creates: [], deletes: [] },
-    likes: { creates: [], deletes: [] },
-    follows: { creates: [], deletes: [] },
+    return cursor ? { cursor: cursor.cursor } : {}
   }
 
-  for (const op of evt.ops) {
-    const uri = `at://${evt.repo}/${op.path}`
-    const [collection] = op.path.split('/')
+  async updateCursor(cursor: number): Promise<void> {
+    await this.db
+      .insertInto('sub_state')
+      .values({
+        service: this.service,
+        cursor,
+      })
+      .onConflict((oc) => oc.doUpdateSet({ cursor }))
+      .execute()
+  }
 
-    if (op.action === 'update') continue // updates not supported yet
+  async getOpsByType(evt: Commit): Promise<OperationsByType> {
+    const car = await readCar(evt.blocks)
+    const ops: OperationsByType = {
+      posts: { creates: [], deletes: [] },
+      reposts: { creates: [], deletes: [] },
+      likes: { creates: [], deletes: [] },
+      follows: { creates: [], deletes: [] },
+    }
 
-    if (op.action === 'create') {
-      if (!op.cid) continue
-      const recordBytes = car.blocks.get(op.cid)
-      if (!recordBytes) continue
-      const record = cborToLexRecord(recordBytes)
-      const create = { uri, cid: op.cid.toString(), author: evt.repo }
-      if (collection === ids.AppBskyFeedPost && isPost(record)) {
-        opsByType.posts.creates.push({ record, ...create })
-      } else if (collection === ids.AppBskyFeedRepost && isRepost(record)) {
-        opsByType.reposts.creates.push({ record, ...create })
-      } else if (collection === ids.AppBskyFeedLike && isLike(record)) {
-        opsByType.likes.creates.push({ record, ...create })
-      } else if (collection === ids.AppBskyGraphFollow && isFollow(record)) {
-        opsByType.follows.creates.push({ record, ...create })
+    for (const op of evt.ops) {
+      const uri = `at://${evt.repo}/${op.path}`
+
+      if (op.action === 'create') {
+        if (!op.cid) continue
+        const blockBytes = car.blocks.get(op.cid as any)
+        if (!blockBytes) continue
+        const record = await cborToLexRecord(blockBytes)
+        const cidStr = op.cid.toString()
+        if (isPost(record)) {
+          ops.posts.creates.push({ uri, cid: cidStr, author: evt.repo, record })
+        } else if (isRepost(record)) {
+          ops.reposts.creates.push({ uri, cid: cidStr, author: evt.repo, record })
+        } else if (isLike(record)) {
+          ops.likes.creates.push({ uri, cid: cidStr, author: evt.repo, record })
+        } else if (isFollow(record)) {
+          ops.follows.creates.push({ uri, cid: cidStr, author: evt.repo, record })
+        }
+      } else if (op.action === 'delete') {
+        if (op.path.startsWith('app.bsky.feed.post/')) {
+          ops.posts.deletes.push({ uri })
+        } else if (op.path.startsWith('app.bsky.feed.repost/')) {
+          ops.reposts.deletes.push({ uri })
+        } else if (op.path.startsWith('app.bsky.feed.like/')) {
+          ops.likes.deletes.push({ uri })
+        } else if (op.path.startsWith('app.bsky.graph.follow/')) {
+          ops.follows.deletes.push({ uri })
+        }
       }
     }
 
-    if (op.action === 'delete') {
-      if (collection === ids.AppBskyFeedPost) {
-        opsByType.posts.deletes.push({ uri })
-      } else if (collection === ids.AppBskyFeedRepost) {
-        opsByType.reposts.deletes.push({ uri })
-      } else if (collection === ids.AppBskyFeedLike) {
-        opsByType.likes.deletes.push({ uri })
-      } else if (collection === ids.AppBskyGraphFollow) {
-        opsByType.follows.deletes.push({ uri })
-      }
-    }
+    return ops
   }
-
-  return opsByType
 }
 
 type OperationsByType = {

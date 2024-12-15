@@ -1,6 +1,5 @@
 import dotenv from 'dotenv'
-import { AtpAgent, BlobRef } from '@atproto/api'
-import fs from 'fs/promises'
+import { AtpAgent } from '@atproto/api'
 import { ids } from '../src/lexicon/lexicons'
 import inquirer from 'inquirer'
 
@@ -16,7 +15,7 @@ const run = async () => {
         required: true,
       },
       {
-        type: 'password',
+        type: 'input',
         name: 'password',
         message: 'Enter your Bluesky password (preferably an App Password):',
       },

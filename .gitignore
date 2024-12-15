@@ -132,3 +132,4 @@ dist
 # intellij
 .idea/
 *.iml
+aroace-feed.db

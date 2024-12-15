@@ -1,0 +1,6 @@
+1. This project is based on the feed generator starter kit from @bluesky-social https://github.com/bluesky-social/feed-generator
+2. This project is using yarn, don't forget use yarn instead of npm
+3. This project is using typescript, don't forget to use typescript
+4. This project is using ts-node, don't forget to use ts-node
+5. This project is using dotenv, don't forget to use dotenv
+

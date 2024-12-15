@@ -6,6 +6,8 @@ export type DatabaseSchema = {
 export type Post = {
   uri: string
   cid: string
+  text: string | null
+  lang: string | null
   indexedAt: string
 }
 

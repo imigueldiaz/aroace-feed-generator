@@ -1,6 +1,6 @@
-import { FastifyInstance, FastifyServerOptions } from 'fastify'
-import fastify from 'fastify'
-import cors from '@fastify/cors'
+import http from 'http'
+import events from 'events'
+import express from 'express'
 import { DidResolver, MemoryCache } from '@atproto/identity'
 import { createServer } from './lexicon'
 import feedGeneration from './methods/feed-generation'
@@ -8,16 +8,18 @@ import describeGenerator from './methods/describe-generator'
 import { createDb, Database, migrateToLatest } from './db'
 import { FirehoseSubscription } from './subscription'
 import { AppContext, Config } from './config'
-import { makeRouter } from './well-known'
+import wellKnown from './well-known'
+import { logger } from './logger'
 
 export class FeedGenerator {
-  public app: FastifyInstance
+  public app: express.Application
+  public server: http.Server
   public db: Database
   public firehose: FirehoseSubscription
   public cfg: Config
 
   constructor(
-    app: FastifyInstance,
+    app: express.Application,
     db: Database,
     firehose: FirehoseSubscription,
     cfg: Config,
@@ -29,25 +31,7 @@ export class FeedGenerator {
   }
 
   static create(cfg: Config) {
-    const fastifyOpts: FastifyServerOptions = {
-      logger: true,
-      maxParamLength: 100,
-      connectionTimeout: 30000,  // 30 segundos
-      keepAliveTimeout: 30000,
-      pluginTimeout: 10000,
-    }
-    
-    const app = fastify(fastifyOpts)
-    
-    // Configurar CORS
-    app.register(cors, {
-      origin: true, // Permite todas los orígenes en desarrollo
-      methods: ['GET', 'POST'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-      credentials: true,
-      maxAge: 7200, // 2 horas de cache para las opciones preflight
-    })
-
+    const app = express()
     const db = createDb(cfg.sqliteLocation)
     const firehose = new FirehoseSubscription(db, cfg.subscriptionEndpoint)
 
@@ -65,54 +49,57 @@ export class FeedGenerator {
         blobLimit: 5 * 1024 * 1024, // 5mb
       },
     })
-
     const ctx: AppContext = {
       db,
       didResolver,
       cfg,
     }
-
-    // Register routes
     feedGeneration(server, ctx)
     describeGenerator(server, ctx)
-    
-    // Registrar el router XRPC como plugin de Fastify
-    app.register(async (fastify) => {
-      fastify.route({
-        url: '/xrpc/*',
-        method: ['GET', 'POST'],
-        handler: (request, reply) => {
-          server.xrpc.router(request.raw, reply.raw)
-        }
-      })
-    })
+    app.use(server.xrpc.router)
+    app.use(wellKnown(ctx))
 
-    // Registrar well-known como plugin
-    app.register(async (fastify) => {
-      const wellKnownRoutes = makeRouter(ctx)
-      fastify.route({
-        url: '/.well-known/did.json',
-        method: ['GET'],
-        handler: wellKnownRoutes.didJson
+    // Add error handling middleware
+    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+      logger.error('Express error:', {
+        error: err,
+        method: req.method,
+        url: req.url,
+        params: req.query,
+        body: req.body
       })
+      next(err)
     })
 
     return new FeedGenerator(app, db, firehose, cfg)
   }
 
-  async start(): Promise<void> {
-    await migrateToLatest(this.db)
-    this.firehose.run(this.cfg.subscriptionReconnectDelay)
-    
+  async start(): Promise<http.Server> {
     try {
-      const address = await this.app.listen({
-        port: this.cfg.port,
-        host: this.cfg.listenhost
+      await migrateToLatest(this.db)
+      
+      // Start server first
+      logger.info(`📡 Attempting to start server on ${this.cfg.listenhost}:${this.cfg.port}...`)
+      const server = this.app.listen(this.cfg.port, this.cfg.listenhost)
+      this.server = server
+      
+      server.on('error', (error) => {
+        logger.error('❌ Server error:', error)
       })
-      console.log(`Server listening at ${address}`)
-    } catch (err) {
-      this.app.log.error(err)
-      process.exit(1)
+      
+      await events.once(server, 'listening')
+      logger.info(`✅ Server is now listening on http://${this.cfg.listenhost}:${this.cfg.port}`)
+      
+      // Start firehose subscription in background
+      logger.info('🔄 Starting firehose subscription...')
+      this.firehose.run(this.cfg.subscriptionReconnectDelay).catch((error) => {
+        logger.error('❌ Firehose subscription error:', error)
+      })
+      
+      return server
+    } catch (error) {
+      logger.error('❌ Failed to start server:', error)
+      throw error
     }
   }
 }
