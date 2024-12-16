@@ -1,12 +1,13 @@
-import express from 'express'
+import express, { Router, RequestHandler } from 'express'
 import { AppContext } from './config'
 
-const makeRouter = (ctx: AppContext) => {
+export const makeRouter = (ctx: AppContext): Router => {
   const router = express.Router()
 
-  router.get('/.well-known/did.json', (_req, res) => {
+  const didJsonHandler: RequestHandler = (_req, res) => {
     if (!ctx.cfg.serviceDid.endsWith(ctx.cfg.hostname)) {
-      return res.sendStatus(404)
+      res.sendStatus(404)
+      return
     }
     res.json({
       '@context': ['https://www.w3.org/ns/did/v1'],
@@ -19,8 +20,11 @@ const makeRouter = (ctx: AppContext) => {
         },
       ],
     })
-  })
+  }
+
+  router.get('/.well-known/did.json', didJsonHandler)
 
   return router
 }
+
 export default makeRouter

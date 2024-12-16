@@ -9,6 +9,7 @@ import { createDb, Database, migrateToLatest } from './db'
 import { FirehoseSubscription } from './subscription'
 import { AppContext, Config } from './config'
 import wellKnown from './well-known'
+import stats from './stats'
 import { logger } from './logger'
 
 export class FeedGenerator {
@@ -57,7 +58,11 @@ export class FeedGenerator {
     feedGeneration(server, ctx)
     describeGenerator(server, ctx)
     app.use(server.xrpc.router)
-    app.use(wellKnown(ctx))
+    const wellKnownRouter = wellKnown(ctx)
+    app.use(wellKnownRouter)
+    const statsRouter = stats(ctx)
+    app.use(statsRouter)
+    app.use(express.json({ limit: '100kb' }))
 
     // Add error handling middleware
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
