@@ -1,6 +1,29 @@
 import express, { Router, RequestHandler } from 'express'
 import { AppContext } from './config'
 
+// Middleware to check API key
+const checkApiKey = (ctx: AppContext): RequestHandler => {
+  return (req, res, next) => {
+    const apiKey = req.headers['x-api-key']
+    
+    if (!ctx.cfg.statsApiKey) {
+      // If no API key is configured, allow access
+      next()
+      return
+    }
+
+    if (!apiKey || apiKey !== ctx.cfg.statsApiKey) {
+      res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid or missing API key'
+      })
+      return
+    }
+
+    next()
+  }
+}
+
 export const makeRouter = (ctx: AppContext): Router => {
   const router = express.Router()
 
@@ -18,8 +41,8 @@ export const makeRouter = (ctx: AppContext): Router => {
         .select(db.fn.count('uri').as('count'))
         .executeTakeFirstOrThrow()
 
-        // max date on db
-        const lastPost = await db
+      // max date on db
+      const lastPost = await db
         .selectFrom('post')
         .select(db.fn.max('indexedAt').as('max'))
         .executeTakeFirstOrThrow()
@@ -38,7 +61,8 @@ export const makeRouter = (ctx: AppContext): Router => {
     }
   }
 
-  router.get('/stats', statsHandler)
+  // Apply API key middleware before the stats handler
+  router.get('/stats', checkApiKey(ctx), statsHandler)
 
   return router
 }

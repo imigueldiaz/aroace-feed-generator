@@ -16,4 +16,5 @@ export type Config = {
   serviceDid: string
   publisherDid: string
   subscriptionReconnectDelay: number
+  statsApiKey?: string // Optional API key for stats endpoint
 }

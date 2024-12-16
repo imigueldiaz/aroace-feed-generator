@@ -14,11 +14,13 @@ const run = async () => {
   logger.info(`- Port: ${maybeInt(process.env.FEEDGEN_PORT) ?? 3000}`)
   logger.info(`- Listen Host: ${maybeStr(process.env.FEEDGEN_LISTENHOST) ?? 'localhost'}`)
   logger.info(`- SQLite Location: ${maybeStr(process.env.FEEDGEN_SQLITE_LOCATION) ?? ':memory:'}`)
+  logger.info(`- Stats API Key: ${process.env.STATS_API_KEY ? 'Configured' : 'Not configured'}`)
   
-  const server = FeedGenerator.create({
+  const cfg = {
     port: maybeInt(process.env.FEEDGEN_PORT) ?? 3000,
     listenhost: maybeStr(process.env.FEEDGEN_LISTENHOST) ?? 'localhost',
     sqliteLocation: maybeStr(process.env.FEEDGEN_SQLITE_LOCATION) ?? ':memory:',
+    hostname,
     subscriptionEndpoint:
       maybeStr(process.env.FEEDGEN_SUBSCRIPTION_ENDPOINT) ??
       'wss://bsky.network',
@@ -26,11 +28,12 @@ const run = async () => {
       maybeStr(process.env.FEEDGEN_PUBLISHER_DID) ?? 'did:example:alice',
     subscriptionReconnectDelay:
       maybeInt(process.env.FEEDGEN_SUBSCRIPTION_RECONNECT_DELAY) ?? 3000,
-    hostname,
     serviceDid,
-  })
+    statsApiKey: maybeStr(process.env.STATS_API_KEY)
+  }
   logger.info('🚀 Server created, attempting to start...')
   try {
+    const server = FeedGenerator.create(cfg)
     await server.start()
     logger.info(`🤖 running feed generator at http://${server.cfg.listenhost}:${server.cfg.port}`)
   } catch (error) {
