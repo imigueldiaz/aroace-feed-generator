@@ -69,4 +69,20 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
       }
     }
   }
+
+  async run(subscriptionReconnectDelay: number) {
+    while (true) {
+      try {
+        logger.info('🔄 Connecting to firehose...')
+        for await (const evt of this.sub) {
+          await this.handleEvent(evt)
+        }
+      } catch (err) {
+        logger.error('❌ Firehose connection error:', err)
+        logger.info(`⏳ Waiting ${subscriptionReconnectDelay}ms before reconnecting...`)
+        await new Promise((r) => setTimeout(r, subscriptionReconnectDelay))
+        logger.info('🔄 Attempting to reconnect to firehose...')
+      }
+    }
+  }
 }
