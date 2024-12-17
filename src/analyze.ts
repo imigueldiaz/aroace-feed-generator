@@ -23,16 +23,29 @@ export function analyzePost(record: Record): boolean {
   
   // Detect language if not specified
   let postLang: string = 'und';
-  if (!record.langs || record.langs.length === 0) {
-    postLang = franc(record.text);
-    if (process.env.DEBUG === 'true') {
-      logger.debug('🔍 Detected language (franc):', postLang);
+  let detectedLang: string = franc(record.text);
+  
+  if (process.env.DEBUG === 'true') {
+    logger.debug('🔍 Detected language (franc):', detectedLang);
+    if (record.langs && record.langs.length > 0) {
+      logger.debug('📝 Language specified by Bluesky:', record.langs[0]);
+    }
+  }
+
+  // If the detected language doesn't match the specified one, use the detected one
+  if (record.langs && record.langs.length > 0) {
+    if (detectedLang !== 'und' && detectedLang !== record.langs[0]) {
+      logger.warn('⚠️ Language mismatch:', {
+        specified: record.langs[0],
+        detected: detectedLang,
+        text: record.text.substring(0, 100) // Log first 100 chars only
+      });
+      postLang = detectedLang;
+    } else {
+      postLang = record.langs[0];
     }
   } else {
-    postLang = record.langs[0];
-    if (process.env.DEBUG === 'true') {
-      logger.debug('📝 Specified language:', postLang);
-    }
+    postLang = detectedLang;
   }
 
   // Map detected language to supported language
@@ -48,8 +61,15 @@ export function analyzePost(record: Record): boolean {
     'und': 'en' // Default to English if language is undetermined
   };
 
-  // Si el idioma no está en el mapping, intentamos con inglés y español
-  const supportedLang: SupportedLanguage = languageMapping[postLang] || 'en';
+  // Si el idioma no está en el mapping, rechazamos el post
+  if (!languageMapping[postLang]) {
+    if (process.env.DEBUG === 'true') {
+      logger.debug('❌ Unsupported language:', postLang);
+    }
+    return false;
+  }
+
+  const supportedLang: SupportedLanguage = languageMapping[postLang];
   const fallbackLangs: SupportedLanguage[] = ['en', 'es'];
   
   if (process.env.DEBUG === 'true') {
