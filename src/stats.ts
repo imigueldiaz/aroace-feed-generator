@@ -104,7 +104,7 @@ export const makeRouter = (ctx: AppContext): Router => {
       const timeDistribution = await db
         .selectFrom('post')
         .select([
-          sql<{ dayOfWeek: Record<string, number>, hourOfDay: Record<string, number> }>`json_object(
+          sql<string>`json_object(
             'dayOfWeek', json_object(
               '0', count(case when strftime('%w', indexedAt) = '0' then 1 end),
               '1', count(case when strftime('%w', indexedAt) = '1' then 1 end),
@@ -144,6 +144,9 @@ export const makeRouter = (ctx: AppContext): Router => {
         ])
         .executeTakeFirstOrThrow()
 
+      // Parse the JSON string from SQLite
+      const parsedTimeDistribution: TimeDistribution = JSON.parse(timeDistribution.distribution);
+
       // Content metrics
       const contentMetrics = await db
         .selectFrom('post')
@@ -164,13 +167,13 @@ export const makeRouter = (ctx: AppContext): Router => {
           lang: count.lang || 'unknown',
           count: Number(count.count)
         })),
-        timeDistribution: timeDistribution.distribution,
+        timeDistribution: parsedTimeDistribution,
         contentMetrics: {
           averageLength: Math.round(Number(contentMetrics.averageLength) || 0),
           hasLinkCount: Number(contentMetrics.hasLinkCount) || 0,
-          hasImageCount: 0, // Necesitaríamos analizar el contenido para esto
+          hasImageCount: 0,
           isReplyCount: Number(contentMetrics.isReplyCount) || 0,
-          isThreadCount: 0 // Necesitaríamos analizar las relaciones entre posts
+          isThreadCount: 0
         }
       }
 
