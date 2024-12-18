@@ -31,6 +31,19 @@ interface LangCount {
   count: number;
 }
 
+interface TimeDistribution {
+  dayOfWeek: Record<string, number>;
+  hourOfDay: Record<string, number>;
+}
+
+interface ContentMetrics {
+  averageLength: number;
+  hasImageCount: number;
+  hasLinkCount: number;
+  isReplyCount: number;
+  isThreadCount: number;
+}
+
 interface StatsResponse {
   timestamp: string;
   postCount: number;
@@ -38,6 +51,8 @@ interface StatsResponse {
   firstDate: string;
   lastDate: string;
   langCounts: LangCount[];
+  timeDistribution: TimeDistribution;
+  contentMetrics: ContentMetrics;
 }
 
 export const makeRouter = (ctx: AppContext): Router => {
@@ -74,7 +89,7 @@ export const makeRouter = (ctx: AppContext): Router => {
         .select(db.fn.max('indexedAt').as('max'))
         .executeTakeFirstOrThrow()
 
-      // Number of posts by language, handling null values and sorting by count
+      // Number of posts by language
       const langCounts = await db
         .selectFrom('post')
         .select([
@@ -84,6 +99,60 @@ export const makeRouter = (ctx: AppContext): Router => {
         .groupBy('lang')
         .orderBy('count', 'desc')
         .execute()
+
+      // Time distribution
+      const timeDistribution = await db
+        .selectFrom('post')
+        .select([
+          sql<{ dayOfWeek: Record<string, number>, hourOfDay: Record<string, number> }>`json_object(
+            'dayOfWeek', json_object(
+              '0', count(case when strftime('%w', indexedAt) = '0' then 1 end),
+              '1', count(case when strftime('%w', indexedAt) = '1' then 1 end),
+              '2', count(case when strftime('%w', indexedAt) = '2' then 1 end),
+              '3', count(case when strftime('%w', indexedAt) = '3' then 1 end),
+              '4', count(case when strftime('%w', indexedAt) = '4' then 1 end),
+              '5', count(case when strftime('%w', indexedAt) = '5' then 1 end),
+              '6', count(case when strftime('%w', indexedAt) = '6' then 1 end)
+            ),
+            'hourOfDay', json_object(
+              '0', count(case when strftime('%H', indexedAt) = '00' then 1 end),
+              '1', count(case when strftime('%H', indexedAt) = '01' then 1 end),
+              '2', count(case when strftime('%H', indexedAt) = '02' then 1 end),
+              '3', count(case when strftime('%H', indexedAt) = '03' then 1 end),
+              '4', count(case when strftime('%H', indexedAt) = '04' then 1 end),
+              '5', count(case when strftime('%H', indexedAt) = '05' then 1 end),
+              '6', count(case when strftime('%H', indexedAt) = '06' then 1 end),
+              '7', count(case when strftime('%H', indexedAt) = '07' then 1 end),
+              '8', count(case when strftime('%H', indexedAt) = '08' then 1 end),
+              '9', count(case when strftime('%H', indexedAt) = '09' then 1 end),
+              '10', count(case when strftime('%H', indexedAt) = '10' then 1 end),
+              '11', count(case when strftime('%H', indexedAt) = '11' then 1 end),
+              '12', count(case when strftime('%H', indexedAt) = '12' then 1 end),
+              '13', count(case when strftime('%H', indexedAt) = '13' then 1 end),
+              '14', count(case when strftime('%H', indexedAt) = '14' then 1 end),
+              '15', count(case when strftime('%H', indexedAt) = '15' then 1 end),
+              '16', count(case when strftime('%H', indexedAt) = '16' then 1 end),
+              '17', count(case when strftime('%H', indexedAt) = '17' then 1 end),
+              '18', count(case when strftime('%H', indexedAt) = '18' then 1 end),
+              '19', count(case when strftime('%H', indexedAt) = '19' then 1 end),
+              '20', count(case when strftime('%H', indexedAt) = '20' then 1 end),
+              '21', count(case when strftime('%H', indexedAt) = '21' then 1 end),
+              '22', count(case when strftime('%H', indexedAt) = '22' then 1 end),
+              '23', count(case when strftime('%H', indexedAt) = '23' then 1 end)
+            )
+          )`.as('distribution')
+        ])
+        .executeTakeFirstOrThrow()
+
+      // Content metrics
+      const contentMetrics = await db
+        .selectFrom('post')
+        .select([
+          sql<number>`avg(length(text))`.as('averageLength'),
+          sql<number>`count(case when text like '%http%' then 1 end)`.as('hasLinkCount'),
+          sql<number>`count(case when uri like '%/app.bsky.feed.post/%/app.bsky.feed.post/%' then 1 end)`.as('isReplyCount')
+        ])
+        .executeTakeFirstOrThrow()
 
       const response: StatsResponse = {
         timestamp: new Date().toISOString(),
@@ -95,6 +164,14 @@ export const makeRouter = (ctx: AppContext): Router => {
           lang: count.lang || 'unknown',
           count: Number(count.count)
         })),
+        timeDistribution: timeDistribution.distribution,
+        contentMetrics: {
+          averageLength: Math.round(Number(contentMetrics.averageLength) || 0),
+          hasLinkCount: Number(contentMetrics.hasLinkCount) || 0,
+          hasImageCount: 0, // Necesitaríamos analizar el contenido para esto
+          isReplyCount: Number(contentMetrics.isReplyCount) || 0,
+          isThreadCount: 0 // Necesitaríamos analizar las relaciones entre posts
+        }
       }
 
       res.json(response)
