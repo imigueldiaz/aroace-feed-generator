@@ -23,7 +23,12 @@ export function analyzePost(record: Record): boolean {
   
   // Detect language if not specified
   let postLang: string = 'und';
-  let detectedLang: string = franc(record.text);
+  let detectedLang: string = 'und';
+  
+  // Only try to detect language if text is long enough (at least 10 characters)
+  if (record.text.length >= 10) {
+    detectedLang = franc(record.text, {minLength: 10, only: ['eng', 'spa', 'por', 'fra', 'deu', 'ita']});
+  }
   
   if (process.env.DEBUG === 'true') {
     logger.debug('🔍 Detected language (franc):', detectedLang);
@@ -35,11 +40,12 @@ export function analyzePost(record: Record): boolean {
   // If the detected language doesn't match the specified one, use the detected one
   if (record.langs && record.langs.length > 0) {
     if (detectedLang !== 'und' && detectedLang !== record.langs[0]) {
-      logger.warn('⚠️ Language mismatch:', {
-        specified: record.langs[0],
-        detected: detectedLang,
-        text: record.text.substring(0, 100) // Log first 100 chars only
-      });
+      if (process.env.DEBUG === 'true') {
+        logger.warn('⚠️ Language mismatch:', {
+          specified: record.langs[0],
+          detected: detectedLang
+        });
+      }
       postLang = detectedLang;
     } else {
       postLang = record.langs[0];

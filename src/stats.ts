@@ -1,5 +1,6 @@
 import express, { Router, RequestHandler } from 'express'
 import { AppContext } from './config'
+import { sql } from 'kysely'
 
 // Middleware to check API key
 const checkApiKey = (ctx: AppContext): RequestHandler => {
@@ -24,6 +25,21 @@ const checkApiKey = (ctx: AppContext): RequestHandler => {
   }
 }
 
+// Types for stats response
+interface LangCount {
+  lang: string | null;
+  count: number;
+}
+
+interface StatsResponse {
+  timestamp: string;
+  postCount: number;
+  uniqueUsers: number;
+  firstDate: string;
+  lastDate: string;
+  langCounts: LangCount[];
+}
+
 export const makeRouter = (ctx: AppContext): Router => {
   const router = express.Router()
 
@@ -41,18 +57,49 @@ export const makeRouter = (ctx: AppContext): Router => {
         .select(db.fn.count('uri').as('count'))
         .executeTakeFirstOrThrow()
 
-      // max date on db
+      const uniqueUsers = await db
+        .selectFrom('post')
+        .select(
+          sql<number>`count(distinct substr(uri, 1, instr(substr(uri, 6), '/') + 5))`.as('count')
+        )
+        .executeTakeFirstOrThrow()
+
+      const firstPost = await db
+        .selectFrom('post')
+        .select(db.fn.min('indexedAt').as('min'))
+        .executeTakeFirstOrThrow()
+
       const lastPost = await db
         .selectFrom('post')
         .select(db.fn.max('indexedAt').as('max'))
         .executeTakeFirstOrThrow()
 
-      res.json({
+      // Number of posts by language, handling null values and sorting by count
+      const langCounts = await db
+        .selectFrom('post')
+        .select([
+          'lang',
+          db.fn.count('uri').as('count')
+        ])
+        .groupBy('lang')
+        .orderBy('count', 'desc')
+        .execute()
+
+      const response: StatsResponse = {
         timestamp: new Date().toISOString(),
-        postCount: postCount.count || 0,
+        postCount: Number(postCount.count) || 0,
+        uniqueUsers: Number(uniqueUsers.count) || 0,
+        firstDate: firstPost.min ? new Date(firstPost.min).toISOString() : 'None',
         lastDate: lastPost.max ? new Date(lastPost.max).toISOString() : 'None',
-      })
+        langCounts: langCounts.map(count => ({
+          lang: count.lang || 'unknown',
+          count: Number(count.count)
+        })),
+      }
+
+      res.json(response)
     } catch (error) {
+      console.error('Error fetching stats:', error)
       res.status(500).json({
         error: 'Error fetching post count',
         timestamp: new Date().toISOString(),
