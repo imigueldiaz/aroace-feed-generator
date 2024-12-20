@@ -153,7 +153,8 @@ export const makeRouter = (ctx: AppContext): Router => {
         .select([
           sql<number>`avg(length(text))`.as('averageLength'),
           sql<number>`count(case when text like '%http%' then 1 end)`.as('hasLinkCount'),
-          sql<number>`count(case when uri like '%/app.bsky.feed.post/%/app.bsky.feed.post/%' then 1 end)`.as('isReplyCount')
+          sql<number>`count(case when uri like '%/app.bsky.feed.post/%/app.bsky.feed.post/%' then 1 end)`.as('isReplyCount'),
+          sql<number>`count(case when text like '%<img%' then 1 end)`.as('hasImageCount'),
         ])
         .executeTakeFirstOrThrow()
 
@@ -171,7 +172,7 @@ export const makeRouter = (ctx: AppContext): Router => {
         contentMetrics: {
           averageLength: Math.round(Number(contentMetrics.averageLength) || 0),
           hasLinkCount: Number(contentMetrics.hasLinkCount) || 0,
-          hasImageCount: 0,
+          hasImageCount: Number(contentMetrics.hasImageCount) || 0,
           isReplyCount: Number(contentMetrics.isReplyCount) || 0,
           isThreadCount: 0
         }
