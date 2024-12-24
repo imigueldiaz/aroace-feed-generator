@@ -13,6 +13,12 @@ const checkApiKey = (ctx: AppContext): RequestHandler => {
       return
     }
 
+    // If we are been called from a localhost request, allow access
+    if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
+      next()
+      return
+    }
+
     if (!apiKey || apiKey !== ctx.cfg.statsApiKey) {
       res.status(401).json({
         error: 'Unauthorized',
