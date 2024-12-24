@@ -1,6 +1,7 @@
 import dotenv from 'dotenv'
 import FeedGenerator from './server'
 import { logger } from './logger'
+import { metricsExporter } from './metrics/exporter'
 
 const run = async () => {
   dotenv.config()
@@ -35,6 +36,7 @@ const run = async () => {
   try {
     const server = FeedGenerator.create(cfg)
     await server.start()
+    metricsExporter.start()
     logger.info(`🤖 running feed generator at http://${server.cfg.listenhost}:${server.cfg.port}`)
   } catch (error) {
     logger.error('❌ Failed to start server:', error)
