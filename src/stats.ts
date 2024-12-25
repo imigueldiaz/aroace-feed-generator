@@ -35,11 +35,18 @@ const checkApiKey = (ctx: AppContext): RequestHandler => {
 interface LangCount {
   lang: string | null;
   count: number;
+  timestamp: string;
 }
 
 interface TimeDistribution {
   dayOfWeek: Record<string, number>;
   hourOfDay: Record<string, number>;
+  timeSeries: {
+    timestamp: string;
+    dayOfWeek: string;
+    hourOfDay: string;
+    count: number;
+  }[];
 }
 
 interface ContentMetrics {
@@ -95,14 +102,16 @@ export const makeRouter = (ctx: AppContext): Router => {
         .select(db.fn.max('indexedAt').as('max'))
         .executeTakeFirstOrThrow()
 
-      // Number of posts by language
+      // Number of posts by language with time series data
       const langCounts = await db
         .selectFrom('post')
         .select([
           'lang',
-          db.fn.count('uri').as('count')
+          db.fn.count('uri').as('count'),
+          sql<string>`strftime('%Y-%m-%d %H:00:00', indexedAt)`.as('hour'),
         ])
-        .groupBy('lang')
+        .groupBy(['lang', 'hour'])
+        .orderBy('hour')
         .orderBy('count', 'desc')
         .execute()
 
@@ -150,8 +159,29 @@ export const makeRouter = (ctx: AppContext): Router => {
         ])
         .executeTakeFirstOrThrow()
 
-      // Parse the JSON string from SQLite
-      const parsedTimeDistribution: TimeDistribution = JSON.parse(timeDistribution.distribution);
+      // Get time series data for time distribution
+      const timeSeriesData = await db
+        .selectFrom('post')
+        .select([
+          sql<string>`strftime('%Y-%m-%d %H:00:00', indexedAt)`.as('timestamp'),
+          sql<string>`strftime('%w', indexedAt)`.as('dayOfWeek'),
+          sql<string>`strftime('%H', indexedAt)`.as('hourOfDay'),
+          db.fn.count('uri').as('count')
+        ])
+        .groupBy(['timestamp', 'dayOfWeek', 'hourOfDay'])
+        .orderBy('timestamp')
+        .execute()
+
+      // Parse the JSON string from SQLite and add time series data
+      const parsedTimeDistribution: TimeDistribution = {
+        ...JSON.parse(timeDistribution.distribution),
+        timeSeries: timeSeriesData.map(item => ({
+          timestamp: item.timestamp,
+          dayOfWeek: item.dayOfWeek,
+          hourOfDay: item.hourOfDay,
+          count: Number(item.count)
+        }))
+      }
 
       // Content metrics
       const contentMetrics = await db
@@ -172,7 +202,8 @@ export const makeRouter = (ctx: AppContext): Router => {
         lastDate: lastPost.max ? new Date(lastPost.max).toISOString() : 'None',
         langCounts: langCounts.map(count => ({
           lang: count.lang || 'unknown',
-          count: Number(count.count)
+          count: Number(count.count),
+          timestamp: count.hour
         })),
         timeDistribution: parsedTimeDistribution,
         contentMetrics: {
